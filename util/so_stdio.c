@@ -4,13 +4,13 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <stdio.h>
 #include <errno.h>
 
 struct _so_file {
     int fd;
     char *buf;
     int error;
+    int eof;
 };
 
 SO_FILE *so_fopen(const char *pathname, const char *mode) {
@@ -25,6 +25,8 @@ SO_FILE *so_fopen(const char *pathname, const char *mode) {
     }
     // Initialize error with 0 indicating no error has been encountered yet
     file->error = 0;
+    // Initialize eof with 0 indicating the end of the file has not been reached yet
+    file->eof = 0;
     // Open file
     if (strcmp(mode, "r") == 0) {
         file->fd = open(pathname, O_RDONLY);
@@ -106,7 +108,7 @@ int so_fputc(int c, SO_FILE *stream) {
 }
 
 int so_feof(SO_FILE *stream) {
-    return -1;
+    return stream->eof;
 }
 
 int so_ferror(SO_FILE *stream) {
