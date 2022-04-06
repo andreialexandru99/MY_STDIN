@@ -31,6 +31,8 @@
 #define SO_EOF (-1)
 
 #define SO_BUFF_SIZE (4096)
+#define SO_READ_LAST (1)
+#define SO_WRITE_LAST (2)
 
 struct _so_file;
 
