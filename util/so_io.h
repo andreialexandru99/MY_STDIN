@@ -1,3 +1,6 @@
+#ifndef SO_IO_H
+#define SO_IO_H
+
 #include "so_stdio.h"
 
 #define SO_BUFF_SIZE (4096)
@@ -22,3 +25,5 @@ long refill_buffer(SO_FILE *stream);
 long so_write(int fd, void *buf, size_t nbytes);
 
 void reset_buffer(SO_FILE *stream);
+
+#endif // SO_IO_H
