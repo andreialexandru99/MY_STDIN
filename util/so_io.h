@@ -15,8 +15,10 @@ struct _so_file {
     // TODO: ADD CURSOR
 };
 
-int so_read(int fd, void *buf, size_t nbytes);
+long so_read(int fd, void *buf, size_t nbytes);
 
-int refill_buffer(SO_FILE *stream);
+long refill_buffer(SO_FILE *stream);
+
+long so_write(int fd, void *buf, size_t nbytes);
 
 void reset_buffer(SO_FILE *stream);
