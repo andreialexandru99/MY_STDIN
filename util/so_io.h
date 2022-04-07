@@ -8,14 +8,13 @@
 #define SO_WRITE_LAST (2)
 
 struct _so_file {
-    int fd;
-    char *buf;
-    int buf_cursor;
-    int buf_end;
-    int error;
-    int eof;
-    int last_op; // SO_READ_LAST or SO_WRITE_LAST
-    // TODO: ADD CURSOR
+    int fd;         // File descriptor
+    char *buf;      // IO buffer
+    int buf_cursor; // indicates the start of valid data in the buffer
+    int buf_end;    // indicates the end of valid data in the buffer
+    int error;      // 0 if no error occured or errno otherwise
+    int eof;        // 0 if not reached yet or 1 if reached
+    int last_op;    // SO_READ_LAST or SO_WRITE_LAST
 };
 
 long so_read(int fd, void *buf, size_t nbytes);
