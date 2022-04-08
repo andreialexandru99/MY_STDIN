@@ -17,11 +17,7 @@ struct _so_file {
 	int last_op;    // SO_READ_LAST or SO_WRITE_LAST
 };
 
-long so_read(int fd, void *buf, size_t nbytes);
-
 long refill_buffer(SO_FILE *stream);
-
-long so_write(int fd, const void *buf, size_t nbytes);
 
 void reset_buffer(SO_FILE *stream);
 

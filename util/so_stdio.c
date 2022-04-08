@@ -41,7 +41,7 @@ SO_FILE *so_fopen(const char *pathname, const char *mode)
 	} else if (strcmp(mode, "w+") == 0) {
 		file->fd = open(pathname, O_RDWR | O_TRUNC | O_CREAT, 0644);
 	} else if (strcmp(mode, "a") == 0) {
-		file->fd = open(pathname, O_APPEND | O_CREAT, 0644);
+		file->fd = open(pathname, O_WRONLY || O_APPEND | O_CREAT, 0644);
 	} else if (strcmp(mode, "a+") == 0) {
 		file->fd = open(pathname, O_RDWR | O_APPEND | O_CREAT, 0644);
 	} else {
@@ -96,16 +96,19 @@ int so_fileno(SO_FILE *stream)
  */
 int so_fflush(SO_FILE *stream)
 {
-	long ret;
+	long ret, bytes;
 
 	// If last operation was a reading one, flushing fails
 	if (stream->last_op == SO_READ_LAST)
 		return SO_EOF;
 	// Write the buffer contents into the stream
-	ret = so_write(stream->fd, stream->buf, stream->buf_end - stream->buf_cursor);
-	if (ret == 0) {
-		stream->error = errno;
-		return SO_EOF;
+	bytes = stream->buf_end - stream->buf_cursor;
+	if (bytes > 0) {
+		ret = write(stream->fd, stream->buf, bytes);
+		if (ret == 0) {
+			stream->error = errno;
+			return SO_EOF;
+		}
 	}
 	stream->buf_cursor = 0;
 	stream->buf_end = 0;
@@ -143,8 +146,10 @@ long so_ftell(SO_FILE *stream)
 
 	// Get actual position in file
 	pos = lseek(stream->fd, 0, SEEK_CUR);
-	if (pos < 0)
+	if (pos < 0) {
 		stream->error = errno;
+		return -1;
+	}
 	// Update position based on buffer contents
 	bytes_in_buffer = stream->buf_end - stream->buf_cursor;
 	if (stream->last_op == SO_READ_LAST) {
@@ -158,33 +163,12 @@ long so_ftell(SO_FILE *stream)
 }
 
 /**
- * @brief Reads from fd into buf until nbytes or EOF reached
- * @return Bytes read or a negative value if an error occurred
- */
-long so_read(int fd, void *buf, size_t nbytes)
-{
-	long bytes_read = 0, ret;
-
-	// Read in a loop until nbytes have been read or eof is encountered
-	while (bytes_read < nbytes) {
-		ret = read(fd, ((char *)buf) + bytes_read, nbytes - bytes_read);
-		if (ret < 0)
-			return ret;
-		if (ret == 0)
-			break;
-		bytes_read += ret;
-		break;
-	}
-	return bytes_read;
-}
-
-/**
  * @brief Refills stream->buf with SO_BUFF_SIZE bytes or until EOF
  * @return Bytes read or -1 if an error occurred
  */
 long refill_buffer(SO_FILE *stream)
 {
-	long bytes_read = so_read(stream->fd, stream->buf, SO_BUFF_SIZE);
+	long bytes_read = read(stream->fd, stream->buf, SO_BUFF_SIZE);
 
 	if (bytes_read < 0) {
 		stream->error = errno;
@@ -204,47 +188,29 @@ size_t so_fread(void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 {
 	long bytes_available, bytes_copied = 0, bytes_left = nmemb * size, bytes_to_copy, ret;
 
-	// Set last operation as SO_READ_LAST for so_fseek
+	// Set last operation as SO_READ_LAST for fseek
 	stream->last_op = SO_READ_LAST;
-	// Copy Min(bytes_left, bytes_available) from buffer into ptr
-	bytes_available = stream->buf_end - stream->buf_cursor;
-	bytes_to_copy = bytes_available < bytes_left ? bytes_available : bytes_left;
-	memcpy(ptr, stream->buf, bytes_to_copy);
-	bytes_left -= bytes_to_copy;
-	bytes_copied += bytes_to_copy;
-	stream->buf_cursor += bytes_to_copy;
-	// If more bytes are needed to be copied still
-	if (bytes_left > 0) {
-		// If bytes_left is greater than SO_BUFF_SIZE, read directly into ptr
-		if (bytes_left > SO_BUFF_SIZE) {
-			ret = so_read(stream->fd, ((char *)ptr) + bytes_copied, bytes_left);
-			if (ret < bytes_left) {
-				if (ret < 0) {
-					stream->error = 1;
-					return 0;
-				}
-				stream->eof = 1;
-			}
-			bytes_copied += ret;
-			bytes_left -= ret;
-		} else { // Refill buffer and copy the remainder of the requested bytes
+	while (bytes_copied < nmemb * size) {
+		bytes_available = stream->buf_end - stream->buf_cursor;
+		// Ensure only whole elements are read
+		bytes_available -= bytes_available % size;
+		// Copy from buffer
+		bytes_to_copy = bytes_available < bytes_left ? bytes_available : bytes_left;
+		memcpy(((char *)ptr) + bytes_copied, stream->buf + stream->buf_cursor, bytes_to_copy);
+		bytes_left -= bytes_to_copy;
+		bytes_copied += bytes_to_copy;
+		stream->buf_cursor += bytes_to_copy;
+		// Check if buffer needs refill for more data
+		if (bytes_left > 0) {
 			ret = refill_buffer(stream);
 			if (ret < 0)
 				return 0;
-			if (ret == 0)
+			if (ret == 0) {
 				stream->eof = 1;
-			bytes_to_copy = ret < bytes_left ? ret : bytes_left;
-			memcpy(((char *)ptr) + bytes_copied, stream->buf, bytes_to_copy);
-			stream->buf_cursor += bytes_to_copy;
-			bytes_copied += bytes_to_copy;
-			bytes_left -= bytes_to_copy;
+				break;
+			}
 		}
 	}
-	// Check if ptr wasn't filled and set it's remainder to zero, including a
-	// potential partial last element
-	ret = bytes_copied % size;
-	if (bytes_left > 0)
-		memset(((char *)ptr) + bytes_copied - ret, 0, nmemb - bytes_copied + ret);
 	return bytes_copied / size;
 }
 
@@ -271,24 +237,6 @@ int so_fgetc(SO_FILE *stream)
 }
 
 /**
- * @brief Writes nbytes bytes from buf into fd, or until there is no more room
- * for data
- * @return Number of bytes written or 0 if an error occurred
- */
-long so_write(int fd, const void *buf, size_t nbytes)
-{
-	long bytes_written = 0, ret;
-
-	while (bytes_written < nbytes) {
-		ret = write(fd, ((char *)buf) + bytes_written, nbytes - bytes_written);
-		if (ret <= 0)
-			return 0;
-		bytes_written += ret;
-	}
-	return bytes_written;
-}
-
-/**
  * @brief Resets the buffer's internal cursors to show it's empty and any
  * contents are to be disregarded
  */
@@ -304,30 +252,27 @@ void reset_buffer(SO_FILE *stream)
  */
 size_t so_fwrite(const void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 {
-	long bytes_left = size * nmemb, bytes_available, bytes_copied = 0, ret;
+	long bytes_left = size * nmemb, bytes_available, bytes_copied = 0, bytes_to_copy, ret;
 
 	// Set last operation as SO_WRITE_LAST for so_fseek and reset eof
 	stream->last_op = SO_WRITE_LAST;
 	stream->eof = 0;
-	// Check if writting should be made into the buffer or stream
-	bytes_available = SO_BUFF_SIZE - stream->buf_end;
-	if (bytes_left > bytes_available) {
-		// Flush the stream
-		ret = so_fflush(stream);
-		if (ret == SO_EOF)
-			return 0;
-		// Write directly into the stream
-		ret = so_write(stream->fd, ptr, bytes_left);
-		if (ret == 0) {
-			stream->error = errno;
-			return 0;
+	while (bytes_copied < nmemb * size) {
+		bytes_available = SO_BUFF_SIZE - stream->buf_end;
+		// Ensure only whole elements are read
+		bytes_available -= bytes_available % size;
+		// Copy into buffer
+		bytes_to_copy = bytes_available < bytes_left ? bytes_available : bytes_left;
+		memcpy(stream->buf + stream->buf_end, ((char *)ptr + bytes_copied), bytes_to_copy);
+		bytes_copied += bytes_to_copy;
+		stream->buf_end += bytes_to_copy;
+		bytes_left -= bytes_to_copy;
+		// If more needs to be written, flush the buffer to make room
+		if (bytes_left > 0) {
+			ret = so_fflush(stream);
+			if (ret == SO_EOF)
+				return 0;
 		}
-		bytes_copied += ret;
-	} else {
-		// copy bytes_left into buffer
-		memcpy(stream->buf + stream->buf_end, ptr, bytes_left);
-		bytes_copied += bytes_left;
-		stream->buf_end += bytes_left;
 	}
 	return bytes_copied / size;
 }
