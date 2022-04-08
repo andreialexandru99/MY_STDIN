@@ -12,7 +12,7 @@ struct _so_file {
 	int buf_cursor; // indicates the start of valid data in the buffer
 	int buf_end;    // indicates the end of valid data in the buffer
 	int fd;         // File descriptor
-	int error;      // 0 if no error occured or errno otherwise
+	int error;      // 0 if no error occured or -1 otherwise
 	int eof;        // 0 if not reached yet or 1 if reached
 	int last_op;    // SO_READ_LAST or SO_WRITE_LAST
 };

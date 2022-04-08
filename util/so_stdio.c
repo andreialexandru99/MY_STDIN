@@ -4,7 +4,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <errno.h>
 
 /**
  * @brief Opens file from pathname in given mode
@@ -70,8 +69,12 @@ int so_fclose(SO_FILE *stream)
 	// Check if flushing is needed
 	if (stream->last_op == SO_WRITE_LAST) {
 		ret = so_fflush(stream);
-		if (ret == SO_EOF)
-			return 0;
+		if (ret == SO_EOF) {
+			close(stream->fd);
+			free(stream->buf);
+			free(stream);
+			return SO_EOF;
+		}
 	}
 	// Close fd and free memory
 	ret = close(stream->fd);
@@ -105,8 +108,8 @@ int so_fflush(SO_FILE *stream)
 	bytes = stream->buf_end - stream->buf_cursor;
 	if (bytes > 0) {
 		ret = write(stream->fd, stream->buf, bytes);
-		if (ret == 0) {
-			stream->error = errno;
+		if (ret <= 0) {
+			stream->error = -1;
 			return SO_EOF;
 		}
 	}
@@ -132,7 +135,7 @@ int so_fseek(SO_FILE *stream, long offset, int whence)
 	// Change cursor postition
 	ret = lseek(stream->fd, offset, whence);
 	if (ret < 0) {
-		stream->error = errno;
+		stream->error = -1;
 		return -1;
 	}
 	// Clear eof indicator
@@ -147,7 +150,7 @@ long so_ftell(SO_FILE *stream)
 	// Get actual position in file
 	pos = lseek(stream->fd, 0, SEEK_CUR);
 	if (pos < 0) {
-		stream->error = errno;
+		stream->error = -1;
 		return -1;
 	}
 	// Update position based on buffer contents
@@ -171,7 +174,7 @@ long refill_buffer(SO_FILE *stream)
 	long bytes_read = read(stream->fd, stream->buf, SO_BUFF_SIZE);
 
 	if (bytes_read < 0) {
-		stream->error = errno;
+		stream->error = -1;
 		return -1;
 	}
 	// Update buffer limits
@@ -196,7 +199,7 @@ size_t so_fread(void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 		bytes_available -= bytes_available % size;
 		// Copy from buffer
 		bytes_to_copy = bytes_available < bytes_left ? bytes_available : bytes_left;
-		memcpy(((char *)ptr) + bytes_copied, stream->buf + stream->buf_cursor, bytes_to_copy);
+		so_copy(((char *)ptr) + bytes_copied, stream->buf + stream->buf_cursor, bytes_to_copy);
 		bytes_left -= bytes_to_copy;
 		bytes_copied += bytes_to_copy;
 		stream->buf_cursor += bytes_to_copy;
@@ -263,7 +266,7 @@ size_t so_fwrite(const void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 		bytes_available -= bytes_available % size;
 		// Copy into buffer
 		bytes_to_copy = bytes_available < bytes_left ? bytes_available : bytes_left;
-		memcpy(stream->buf + stream->buf_end, ((char *)ptr + bytes_copied), bytes_to_copy);
+		so_copy(stream->buf + stream->buf_end, ((char *)ptr + bytes_copied), bytes_to_copy);
 		bytes_copied += bytes_to_copy;
 		stream->buf_end += bytes_to_copy;
 		bytes_left -= bytes_to_copy;
