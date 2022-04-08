@@ -15,6 +15,7 @@ struct _so_file {
 	int error;      // 0 if no error occured or -1 otherwise
 	int eof;        // 0 if not reached yet or 1 if reached
 	int last_op;    // SO_READ_LAST or SO_WRITE_LAST
+	int child_pid;	// PID of child process created with so_popen
 };
 
 long refill_buffer(SO_FILE *stream);

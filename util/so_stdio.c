@@ -1,6 +1,7 @@
 #include "so_io.h"
 #include <string.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -59,7 +60,7 @@ SO_FILE *so_fopen(const char *pathname, const char *mode)
 }
 
 /**
- * @brief Closes given stream and frees all memory associated with the it
+ * @brief Closes given stream and frees all memory associated with it
  * @return 0 if successful or SO_EOF if an error occurred
  */
 int so_fclose(SO_FILE *stream)
@@ -199,7 +200,7 @@ size_t so_fread(void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 		bytes_available -= bytes_available % size;
 		// Copy from buffer
 		bytes_to_copy = bytes_available < bytes_left ? bytes_available : bytes_left;
-		so_copy(((char *)ptr) + bytes_copied, stream->buf + stream->buf_cursor, bytes_to_copy);
+		memcpy(((char *)ptr) + bytes_copied, stream->buf + stream->buf_cursor, bytes_to_copy);
 		bytes_left -= bytes_to_copy;
 		bytes_copied += bytes_to_copy;
 		stream->buf_cursor += bytes_to_copy;
@@ -266,7 +267,7 @@ size_t so_fwrite(const void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 		bytes_available -= bytes_available % size;
 		// Copy into buffer
 		bytes_to_copy = bytes_available < bytes_left ? bytes_available : bytes_left;
-		so_copy(stream->buf + stream->buf_end, ((char *)ptr + bytes_copied), bytes_to_copy);
+		memcpy(stream->buf + stream->buf_end, ((char *)ptr + bytes_copied), bytes_to_copy);
 		bytes_copied += bytes_to_copy;
 		stream->buf_end += bytes_to_copy;
 		bytes_left -= bytes_to_copy;
@@ -319,12 +320,116 @@ int so_ferror(SO_FILE *stream)
 	return stream->error;
 }
 
+/**
+ * @brief Starts a new process that will execute the given command and opens a pipe
+ * to read from/write to based on the given type
+ * @return SO_FILE structure used to communicate with the process
+ */
 SO_FILE *so_popen(const char *command, const char *type)
 {
-	return NULL;
+	// Allocate memory for SO_FILE structure
+	SO_FILE *file = (SO_FILE *)malloc(sizeof(SO_FILE));
+	int fds[2], ret, pid, mode;
+
+	if (file == NULL)
+		return NULL;
+	// Check if a valid type was given
+	if (strcmp(type, "r") == 0) {
+		mode = 0;
+	} else if (strcmp(type, "w") == 0) {
+		mode = 1;
+	} else {
+		free(file);
+		return NULL;
+	}
+	// Allocate memory for IO buffer
+	file->buf = calloc(SO_BUFF_SIZE, sizeof(char));
+	if (file->buf == NULL) {
+		free(file);
+		return NULL;
+	}
+	// Initialize error with 0 indicating no error has been encountered yet
+	file->error = 0;
+	// Initialize eof with 0 indicating the end of the file has not been reached yet
+	file->eof = 0;
+	// Initialize buf_cursor, buf_end and last_op to zero
+	file->buf_cursor = 0;
+	file->buf_end = 0;
+	file->last_op = 0;
+	// Create pipe
+	ret = pipe(fds);
+	if (ret == -1) {
+		free(file->buf);
+		free(file);
+		return NULL;
+	}
+	pid = fork();
+	switch (pid) {
+		case -1: // Forking failed
+			close(fds[0]);
+			close(fds[1]);
+			free(file->buf);
+			free(file);
+			return NULL;
+		case 0: // Child process
+			// Check which end of the pipe needs to be closed
+			if (mode == 0) { // Reading mode
+				close(fds[0]);
+				// Redirect fds[1] to stdout
+				ret = dup2(fds[1], STDOUT_FILENO);
+				if (ret == -1)
+					exit(-2);
+			} else { // Writting mode
+				close(fds[1]);
+				// Redirect fds[0] to stdin
+				ret = dup2(fds[0], STDIN_FILENO);
+				if (ret == -1)
+					exit(-2);
+			}
+			// Execute given command
+			ret = execlp("sh", "sh", "-c", command, NULL);
+			if (ret == -1)
+				exit(-1);
+			break;
+		default: // Parent process
+			file->child_pid = pid;
+			if (mode == 0) {
+				close(fds[1]);
+				file->fd = fds[0];
+			} else {
+				close(fds[0]);
+				file->fd = fds[1];
+			}
+			break;
+	}
+	return file;
 }
 
+/**
+ * @brief Waits for the process to end and frees all memory associated with it
+ * @return The status of the process or -1 if closing fails
+ */
 int so_pclose(SO_FILE *stream)
 {
-	return -1;
+	int status, ret;
+
+	// Check if flushing is needed
+	if (stream->last_op == SO_WRITE_LAST) {
+		ret = so_fflush(stream);
+		if (ret == SO_EOF) {
+			close(stream->fd);
+			free(stream->buf);
+			free(stream);
+			return -1;
+		}
+	}
+	// Wait for child process to finish
+	ret = waitpid(stream->child_pid, &status, WNOHANG);
+	if (ret == -1)
+		status = -1;
+	// Close the stream and free all memory associated with it
+	close(stream->fd);
+	free(stream->buf);
+	free(stream);
+	return status;
 }
