@@ -8,13 +8,13 @@
 #include <unistd.h>
 
 /**
- * @brief Opens file from pathname in given mode and initializes the SO_FILE structure
- * @return Pointer to SO_FILE structure associated or NULL if an error occurred
+ * @brief Opens file from pathname in given mode and initializes the MY_FILE structure
+ * @return Pointer to MY_FILE structure associated or NULL if an error occurred
  */
-SO_FILE *so_fopen(const char *pathname, const char *mode)
+MY_FILE *my_fopen(const char *pathname, const char *mode)
 {
-	// Allocate memory for SO_FILE structure
-	SO_FILE *file = malloc(sizeof(SO_FILE));
+	// Allocate memory for MY_FILE structure
+	MY_FILE *file = malloc(sizeof(MY_FILE));
 
 	if (file == NULL)
 		return NULL;
@@ -43,20 +43,20 @@ SO_FILE *so_fopen(const char *pathname, const char *mode)
 
 /**
  * @brief Closes given stream and frees all memory associated with it
- * @return 0 if successful or SO_EOF if an error occurred
+ * @return 0 if successful or MY_EOF if an error occurred
  */
-int so_fclose(SO_FILE *stream)
+int my_fclose(MY_FILE *stream)
 {
 	int ret;
 
 	// Check if flushing is needed
 	if (stream->last_op == WRITE_LAST) {
-		ret = so_fflush(stream);
-		if (ret == SO_EOF) {
+		ret = my_fflush(stream);
+		if (ret == MY_EOF) {
 			close(stream->fd);
 			free(stream->buf);
 			free(stream);
-			return SO_EOF;
+			return MY_EOF;
 		}
 	}
 	// Close fd and free memory
@@ -64,36 +64,36 @@ int so_fclose(SO_FILE *stream)
 	free(stream->buf);
 	free(stream);
 	if (ret < 0)
-		return SO_EOF;
+		return MY_EOF;
 	return 0;
 }
 
 /**
  * @return The file descriptor of the stream
  */
-int so_fileno(SO_FILE *stream)
+int my_fileno(MY_FILE *stream)
 {
 	return stream->fd;
 }
 
 /**
  * @brief Flushes the contents of the stream's internal buffer
- * @return 0 if successful, SO_EOF if an error occurred
+ * @return 0 if successful, MY_EOF if an error occurred
  */
-int so_fflush(SO_FILE *stream)
+int my_fflush(MY_FILE *stream)
 {
 	long ret, bytes;
 
 	// If last operation was a reading one, flushing fails
 	if (stream->last_op == READ_LAST)
-		return SO_EOF;
+		return MY_EOF;
 	// Write the buffer contents into the stream
 	bytes = stream->buf_end - stream->buf_cursor;
 	if (bytes > 0) {
 		ret = write(stream->fd, stream->buf, bytes);
 		if (ret <= 0) {
 			stream->error = -1;
-			return SO_EOF;
+			return MY_EOF;
 		}
 	}
 	stream->buf_cursor = 0;
@@ -106,14 +106,14 @@ int so_fflush(SO_FILE *stream)
  * given through whence. Clears eof indicator
  * @return 0 if successful, -1 if an error occured
  */
-int so_fseek(SO_FILE *stream, long offset, int whence)
+int my_fseek(MY_FILE *stream, long offset, int whence)
 {
 	long ret;
 
 	// Flush/reset the buffer if needed
 	if (stream->last_op == WRITE_LAST) {
-		ret = so_fflush(stream);
-		if (ret == SO_EOF)
+		ret = my_fflush(stream);
+		if (ret == MY_EOF)
 			return -1;
 	} else {
 		reset_buffer(stream);
@@ -133,7 +133,7 @@ int so_fseek(SO_FILE *stream, long offset, int whence)
  * @brief Calculates the position in the stream while accounting for the internal buffer
  * @return Position in stream or -1 if an error occured
  */
-long so_ftell(SO_FILE *stream)
+long my_ftell(MY_FILE *stream)
 {
 	long pos, bytes_in_buffer;
 
@@ -146,7 +146,7 @@ long so_ftell(SO_FILE *stream)
 	// Update position based on buffer contents
 	bytes_in_buffer = stream->buf_end - stream->buf_cursor;
 	if (stream->last_op == READ_LAST) {
-		// Ignore bytes read in buffer that haven't yet been used
+		// Ignore bytes read in buffer that haven't yet been read by user
 		pos -= bytes_in_buffer;
 	} else {
 		// Add bytes written in buffer that haven't yet been flushed
@@ -159,7 +159,7 @@ long so_ftell(SO_FILE *stream)
  * @brief  Reads nmemb elements of given size into ptr from the stream
  * @return Elements read or 0 if an error occured
  */
-size_t so_fread(void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
+size_t my_fread(void *ptr, size_t size, size_t nmemb, MY_FILE *stream)
 {
 	size_t bytes_read = 0, bytes_left = nmemb * size;
 	long ret;
@@ -181,7 +181,7 @@ size_t so_fread(void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 			return 0;
 		}
 		if (ret == 0) {
-			stream->eof == 1;
+			stream->eof = 1;
 			return bytes_read / size;
 		}
 	} else if (bytes_left > 0) {
@@ -201,9 +201,9 @@ size_t so_fread(void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 
 /**
  * @brief Reads one character from stream and returns it
- * @return Character read or SO_EOF in case of failure
+ * @return Character read or MY_EOF in case of failure
  */
-int so_fgetc(SO_FILE *stream)
+int my_fgetc(MY_FILE *stream)
 {
 	long ret;
 
@@ -216,7 +216,7 @@ int so_fgetc(SO_FILE *stream)
 		if (ret == 0)
 			stream->eof = 1;
 		if (ret <= 0)
-			return SO_EOF;
+			return MY_EOF;
 	}
 	return (int)stream->buf[stream->buf_cursor++];
 }
@@ -225,42 +225,45 @@ int so_fgetc(SO_FILE *stream)
  * @brief Writes nmemb elements of given size from ptr into the stream
  * @return Number of written bytes or 0 if an error occured
  */
-size_t so_fwrite(const void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
+size_t my_fwrite(const void *ptr, size_t size, size_t nmemb, MY_FILE *stream)
 {
-	long bytes_left = size * nmemb, bytes_available, bytes_copied = 0, bytes_to_copy, ret;
+	size_t bytes_left = size * nmemb, bytes_written = 0;
+	long ret;
 
 	// Update stream's last operation and reset eof
 	stream->last_op = WRITE_LAST;
-
-	
-
-
 	stream->eof = 0;
-	while (bytes_copied < nmemb * size) {
-		bytes_available = BUFF_SIZE - stream->buf_end;
-		// Ensure only whole elements are read
-		bytes_available -= bytes_available % size;
-		// Copy into buffer
-		bytes_to_copy = bytes_available < bytes_left ? bytes_available : bytes_left;
-		memcpy(stream->buf + stream->buf_end, ((char *)ptr + bytes_copied), bytes_to_copy);
-		bytes_copied += bytes_to_copy;
-		stream->buf_end += bytes_to_copy;
-		bytes_left -= bytes_to_copy;
-		// If more needs to be written, flush the buffer to make room
-		if (bytes_left > 0) {
-			ret = so_fflush(stream);
-			if (ret == SO_EOF)
-				return 0;
+	// Copy the bytes that fit into the buffer
+	ret = copy_into_buf(stream, ptr, bytes_left);
+	bytes_left -= ret;
+	bytes_written += ret;
+	// Check if more bytes need to be written
+	if (bytes_left > BUFF_SIZE) {
+		// Number of bytes left to be written exceed BUFF_SIZE. Flush and write
+		// the rest directly into the file
+		if (my_fflush(stream) == MY_EOF)
+			return 0;
+		ret = write(stream->fd, ((char *)ptr) + bytes_written, bytes_left);
+		if (ret <= 0) {
+			stream->error = -1;
+			return 0;
 		}
+		bytes_written += ret;
+	} else if (bytes_left > 0) {
+		// Number of bytes left to be written fit into the buffer. Flush and
+		// copy what's left from ptr
+		if (my_fflush(stream) == MY_EOF)
+			return 0;
+		bytes_written += copy_into_buf(stream, ((char *)ptr) + bytes_written, bytes_left);
 	}
-	return bytes_copied / size;
+	return bytes_written / size;
 }
 
 /**
- * @brief Writes c into the stream
- * @return Written character or SO_EOF if an error occured
+ * @brief Writes given character into the stream
+ * @return Written character or MY_EOF if an error occured
  */
-int so_fputc(int c, SO_FILE *stream)
+int my_fputc(int c, MY_FILE *stream)
 {
 	long ret;
 
@@ -270,9 +273,9 @@ int so_fputc(int c, SO_FILE *stream)
 	// Check if buffer needs flushing for space
 	if (BUFF_SIZE - stream->buf_end < 1) {
 		// Flush the stream
-		ret = so_fflush(stream);
-		if (ret == SO_EOF)
-			return SO_EOF;
+		ret = my_fflush(stream);
+		if (ret == MY_EOF)
+			return MY_EOF;
 	}
 	// Copy character into buffer and return it
 	stream->buf[stream->buf_end] = (char)c;
@@ -282,7 +285,7 @@ int so_fputc(int c, SO_FILE *stream)
 /**
  * @return Returns the eof indicator of the stream: 1 if reached, 0 otherwise
  */
-int so_feof(SO_FILE *stream)
+int my_feof(MY_FILE *stream)
 {
 	return stream->eof;
 }
@@ -290,7 +293,7 @@ int so_feof(SO_FILE *stream)
 /**
  * @return Returns the error indicator of the stream or 0 if none occurred
  */
-int so_ferror(SO_FILE *stream)
+int my_ferror(MY_FILE *stream)
 {
 	return stream->error;
 }
@@ -298,13 +301,14 @@ int so_ferror(SO_FILE *stream)
 /**
  * @brief Starts a new process that will execute the given command and opens a pipe
  * to read from/write to based on the given type
- * @return SO_FILE structure used to communicate with the process
+ * @return MY_FILE structure used to communicate with the process or NULL if an
+ * error occurred
  */
-SO_FILE *so_popen(const char *command, const char *type)
+MY_FILE *my_popen(const char *command, const char *type)
 {
-	// Allocate memory for SO_FILE structure
-	SO_FILE *file = malloc(sizeof(SO_FILE));
-	int fds[2], ret, pid, mode;
+	// Allocate memory for MY_FILE structure
+	MY_FILE *file = malloc(sizeof(MY_FILE));
+	int fds[2], ret, mode;
 
 	if (file == NULL)
 		return NULL;
@@ -323,11 +327,9 @@ SO_FILE *so_popen(const char *command, const char *type)
 		free(file);
 		return NULL;
 	}
-	// Initialize error with 0 indicating no error has been encountered yet
+	// Initialize file indicators
 	file->error = 0;
-	// Initialize eof with 0 indicating the end of the file has not been reached yet
 	file->eof = 0;
-	// Initialize buf_cursor, buf_end and last_op to zero
 	file->buf_cursor = 0;
 	file->buf_end = 0;
 	file->last_op = NO_OP;
@@ -338,44 +340,13 @@ SO_FILE *so_popen(const char *command, const char *type)
 		free(file);
 		return NULL;
 	}
-	pid = fork();
-	switch (pid) {
-		case -1: // Forking failed
-			close(fds[0]);
-			close(fds[1]);
-			free(file->buf);
-			free(file);
-			return NULL;
-		case 0: // Child process
-			// Check which end of the pipe needs to be closed
-			if (mode == 0) { // Reading mode
-				close(fds[0]);
-				// Redirect fds[1] to stdout
-				ret = dup2(fds[1], STDOUT_FILENO);
-				if (ret == -1)
-					exit(-2);
-			} else { // Writting mode
-				close(fds[1]);
-				// Redirect fds[0] to stdin
-				ret = dup2(fds[0], STDIN_FILENO);
-				if (ret == -1)
-					exit(-2);
-			}
-			// Execute given command
-			ret = execlp("sh", "sh", "-c", command, NULL);
-			if (ret == -1)
-				exit(-1);
-			break;
-		default: // Parent process
-			file->child_pid = pid;
-			if (mode == 0) {
-				close(fds[1]);
-				file->fd = fds[0];
-			} else {
-				close(fds[0]);
-				file->fd = fds[1];
-			}
-			break;
+	ret = start_proc(file, fds, mode, command);
+	if (ret == -1) {
+		close(fds[0]);
+		close(fds[1]);
+		free(file->buf);
+		free(file);
+		return NULL;
 	}
 	return file;
 }
@@ -384,26 +355,26 @@ SO_FILE *so_popen(const char *command, const char *type)
  * @brief Waits for the process to end and frees all memory associated with it
  * @return The status of the process or -1 if closing fails
  */
-int so_pclose(SO_FILE *stream)
+int my_pclose(MY_FILE *stream)
 {
 	int status, ret;
 
 	// Check if flushing is needed
 	if (stream->last_op == WRITE_LAST) {
-		ret = so_fflush(stream);
-		if (ret == SO_EOF) {
+		ret = my_fflush(stream);
+		if (ret == MY_EOF) {
 			close(stream->fd);
 			free(stream->buf);
 			free(stream);
 			return -1;
 		}
 	}
+	close(stream->fd);
 	// Wait for child process to finish
-	ret = waitpid(stream->child_pid, &status, WNOHANG);
+	ret = waitpid(stream->child_pid, &status, 0);
 	if (ret == -1)
 		status = -1;
 	// Close the stream and free all memory associated with it
-	close(stream->fd);
 	free(stream->buf);
 	free(stream);
 	return status;

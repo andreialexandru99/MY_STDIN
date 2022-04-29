@@ -1,5 +1,5 @@
-#ifndef SO_STDIO_H
-#define SO_STDIO_H
+#ifndef MY_STDIO_H
+#define MY_STDIO_H
 
 #include <stdlib.h>
 
@@ -7,37 +7,37 @@
 #define SEEK_CUR	1	/* Seek from current position.  */
 #define SEEK_END	2	/* Seek from end of file.  */
 
-#define SO_EOF (-1)
+#define MY_EOF (-1)
 
-struct _so_file;
-typedef struct _so_file SO_FILE;
+struct _my_file;
+typedef struct _my_file MY_FILE;
 
-SO_FILE *so_fopen(const char *pathname, const char *mode);
+MY_FILE *my_fopen(const char *pathname, const char *mode);
 
-int so_fclose(SO_FILE *stream);
+int my_fclose(MY_FILE *stream);
 
-int so_fileno(SO_FILE *stream);
+int my_fileno(MY_FILE *stream);
 
-int so_fflush(SO_FILE *stream);
+int my_fflush(MY_FILE *stream);
 
-int so_fseek(SO_FILE *stream, long offset, int whence);
+int my_fseek(MY_FILE *stream, long offset, int whence);
 
-long so_ftell(SO_FILE *stream);
+long my_ftell(MY_FILE *stream);
 
-size_t so_fread(void *ptr, size_t size, size_t nmemb, SO_FILE *stream);
+size_t my_fread(void *ptr, size_t size, size_t nmemb, MY_FILE *stream);
 
-size_t so_fwrite(const void *ptr, size_t size, size_t nmemb, SO_FILE *stream);
+size_t my_fwrite(const void *ptr, size_t size, size_t nmemb, MY_FILE *stream);
 
-int so_fgetc(SO_FILE *stream);
+int my_fgetc(MY_FILE *stream);
 
-int so_fputc(int c, SO_FILE *stream);
+int my_fputc(int c, MY_FILE *stream);
 
-int so_feof(SO_FILE *stream);
+int my_feof(MY_FILE *stream);
 
-int so_ferror(SO_FILE *stream);
+int my_ferror(MY_FILE *stream);
 
-SO_FILE *so_popen(const char *command, const char *type);
+MY_FILE *my_popen(const char *command, const char *type);
 
-int so_pclose(SO_FILE *stream);
+int my_pclose(MY_FILE *stream);
 
-#endif /* SO_STDIO_H */
+#endif /* MY_STDIO_H */
