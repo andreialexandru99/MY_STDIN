@@ -19,3 +19,4 @@ This is a project meant to help understand the way the standard input / output l
 * This project is meant to be used on linux systems
 * According to the POSIX standard, the library assumes the user will include a seek - `my_fseek` - between a read - `my_fread` or `fgetc` - followed by a write - `my_fwrite` or `my_fputc` - call.
 * According to the POSIX standard, the library assumes the user will include a seek or fflush - `my_fseek` or `my_fflush` - between a write - `my_fwrite` or `my_fputc` - followed by a read - `my_fread` or `fgetc` - call.
+* If the user does not adhere to the standard, the behaviour of the library will likely not be the one intended
